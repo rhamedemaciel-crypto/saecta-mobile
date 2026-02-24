@@ -30,6 +30,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "O SAECTA precisa de acesso à câmara para ler os QR Codes dos alunos."
+        }
+      ],
+      [
         "react-native-document-scanner-plugin",
         {
           "cameraPermission": "O acesso à câmera é necessário para digitalizar avaliações e documentos."
