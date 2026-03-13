@@ -16,8 +16,11 @@ export default function ScannerFlow() {
   const [studentData, setStudentData] = useState<string | null>(null);
   const [gabaritoImg, setGabaritoImg] = useState<string | null>(null);
   
-  // MUDANÇA: Agora aceita múltiplas páginas para a questão 📸📸
+  // MUDANÇA: Agora aceita múltiplas páginas para a questão 
   const [questaoPages, setQuestaoPages] = useState<string[]>([]);
+  // NOVOS DADOS PARA A IA DO GOOGLE (GEMINI) 🤖
+  const [enunciado, setEnunciado] = useState<string>("Explique as principais causas da Revolução Francesa.");
+  const [respostaEsperada, setRespostaEsperada] = useState<string>("O aluno deve mencionar a crise financeira, a desigualdade social e a influência das ideias iluministas.");
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
