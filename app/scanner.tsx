@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Button, Alert, Image, Vibration, ScrollView, TouchableOpacity } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { View, Text, StyleSheet, Button, Alert, Vibration } from 'react-native';
+import { useCameraPermissions } from 'expo-camera';
 import DocumentScanner from 'react-native-document-scanner-plugin';
+
+// Importando nossos componentes fatiados
+import Step1QrCode from '../components/scanner/Step1QrCode';
+import Step2Gabarito from '../components/scanner/Step2Gabarito';
+import Step3Questao from '../components/scanner/Step3Questao';
+import Step4Review from '../components/scanner/Step4Review';
 
 type Step = 'QR_CODE' | 'SCAN_GABARITO' | 'SCAN_QUESTAO' | 'REVIEW';
 
@@ -9,63 +15,36 @@ export default function ScannerFlow() {
   const [step, setStep] = useState<Step>('QR_CODE');
   const [permission, requestPermission] = useCameraPermissions();
   
-  // TRAVA DE SEGURANÇA 🔒
   const [scanned, setScanned] = useState(false);
-
-  // Dados capturados
   const [studentData, setStudentData] = useState<string | null>(null);
   const [gabaritoImg, setGabaritoImg] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  
-  // MUDANÇA: Agora aceita múltiplas páginas para a questão 📸📸
   const [questaoPages, setQuestaoPages] = useState<string[]>([]);
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
   }, []);
 
-  // --- LÓGICA 1: QR CODE ---
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return; 
     setScanned(true);
     Vibration.vibrate();
     setStudentData(data);
 
-    Alert.alert(
-      "Aluno Identificado!", 
-      `Dados: ${data}`, 
-      [
-        { 
-          text: "Escanear Provas", 
-          onPress: () => setStep('SCAN_GABARITO') 
-        },
-        {
-          text: "Tentar Novamente",
-          onPress: () => {
-            setScanned(false);
-            setStudentData(null);
-          },
-          style: "cancel"
-        }
-      ]
-    );
+    Alert.alert("Aluno Identificado!", `Dados: ${data}`, [
+      { text: "Escanear Provas", onPress: () => setStep('SCAN_GABARITO') },
+      { text: "Tentar Novamente", style: "cancel", onPress: () => { setScanned(false); setStudentData(null); } }
+    ]);
   };
 
-  // --- LÓGICA 2: SCANNER DE DOCUMENTO ---
   const scanDocument = async (target: 'gabarito' | 'questao') => {
     try {
-      // Configuração do Scanner
-      const { scannedImages } = await DocumentScanner.scanDocument({
-        maxNumDocuments: 1, // Escaneia 1 folha por vez
-        croppedImageQuality: 100 // Qualidade máxima
-      });
-
+      const { scannedImages } = await DocumentScanner.scanDocument({ maxNumDocuments: 1, croppedImageQuality: 100 });
       if (scannedImages && scannedImages.length > 0) {
         if (target === 'gabarito') {
           setGabaritoImg(scannedImages[0]);
           setStep('SCAN_QUESTAO'); 
         } else {
-          // LÓGICA DE LISTA: Adiciona a nova página na lista de questões
           setQuestaoPages(prev => [...prev, scannedImages[0]]);
         }
       }
@@ -73,51 +52,28 @@ export default function ScannerFlow() {
       console.log("Scanner cancelado", e);
     }
   };
-  // --- LÓGICA 3: ENVIAR PARA O SERVIDOR ---
+
   const enviarParaServidor = async () => {
     if (!studentData || !gabaritoImg) {
       Alert.alert("Erro", "Faltam dados do aluno ou foto do gabarito.");
       return;
     }
-
     setIsUploading(true);
 
     try {
       const formData = new FormData();
-      
-      // 1. Adiciona o ID/Matrícula do aluno
       formData.append('aluno_id', studentData);
-
-      // 2. Adiciona a imagem do Gabarito
+      
       const gabaritoFilename = gabaritoImg.split('/').pop() || 'gabarito.jpg';
-      formData.append('gabarito', {
-        uri: gabaritoImg,
-        name: gabaritoFilename,
-        type: 'image/jpeg',
-      } as any);
+      formData.append('gabarito', { uri: gabaritoImg, name: gabaritoFilename, type: 'image/jpeg' } as any);
 
-      // 3. Adiciona as imagens das Questões (Múltiplos arquivos)
       questaoPages.forEach((imgUri, index) => {
         const filename = imgUri.split('/').pop() || `questao_${index}.jpg`;
-        formData.append('questoes', {
-          uri: imgUri,
-          name: filename,
-          type: 'image/jpeg',
-        } as any);
+        formData.append('questoes', { uri: imgUri, name: filename, type: 'image/jpeg' } as any);
       });
 
-      // ⚠️ Substitua este IP pelo IP da sua máquina na rede local quando for testar
       const BACKEND_URL = 'http://192.168.0.163:8000/api/avaliar'; 
-
-      const response = await fetch(BACKEND_URL, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-          // Não coloque 'Content-Type': 'multipart/form-data', o fetch/axios faz isso sozinho no mobile!
-        },
-      });
-
+      const response = await fetch(BACKEND_URL, { method: 'POST', body: formData, headers: { 'Accept': 'application/json' } });
       const result = await response.json();
 
       if (response.ok) {
@@ -126,7 +82,6 @@ export default function ScannerFlow() {
       } else {
         Alert.alert("Erro no Servidor", result.detail || "Falha ao enviar.");
       }
-
     } catch (error) {
       console.error(error);
       Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor.");
@@ -140,7 +95,7 @@ export default function ScannerFlow() {
     setScanned(false);
     setStudentData(null);
     setGabaritoImg(null);
-    setQuestaoPages([]); // Limpa a lista
+    setQuestaoPages([]); 
   };
 
   if (!permission) return <View />;
@@ -153,103 +108,31 @@ export default function ScannerFlow() {
 
   return (
     <View style={styles.container}>
-      
-      {/* ETAPA 1: QR CODE */}
       {step === 'QR_CODE' && (
-        <View style={styles.fullScreen}>
-          <CameraView
-            style={styles.camera}
-            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-          >
-            <View style={styles.overlay}>
-              <Text style={styles.headerText}>1. Escaneie o QR Code do Aluno</Text>
-              <View style={styles.scanFrame} />
-            </View>
-          </CameraView>
-        </View>
+        <Step1QrCode scanned={scanned} onScan={handleBarCodeScanned} />
       )}
 
-      {/* ETAPA 2: GABARITO */}
       {step === 'SCAN_GABARITO' && (
-        <View style={styles.centerParams}>
-          <Text style={styles.title}>2. Foto do Gabarito</Text>
-          <Text style={styles.studentLabel}>Aluno: {studentData}</Text>
-          
-          <TouchableOpacity style={styles.btnBig} onPress={() => scanDocument('gabarito')}>
-            <Text style={styles.btnText}>📸 Escanear Gabarito</Text>
-          </TouchableOpacity>
-        </View>
+        <Step2Gabarito studentData={studentData} onScanClick={() => scanDocument('gabarito')} />
       )}
 
-      {/* ETAPA 3: QUESTÃO (Múltiplas Páginas) */}
       {step === 'SCAN_QUESTAO' && (
-        <View style={styles.centerParams}>
-          <Text style={styles.title}>3. Foto da Questão</Text>
-          <Text style={styles.statusLabel}>Gabarito Salvo ✅</Text>
-          
-          {/* Visualizador de páginas capturadas */}
-          <View style={styles.pagesContainer}>
-            <Text style={styles.counterText}>Páginas da questão: {questaoPages.length}</Text>
-            <ScrollView horizontal style={styles.scrollPreview}>
-               {questaoPages.length === 0 && (
-                 <View style={styles.placeholder}>
-                    <Text style={{color: '#aaa', textAlign: 'center'}}>Nenhuma página ainda</Text>
-                 </View>
-               )}
-               {questaoPages.map((img, index) => (
-                 <Image key={index} source={{ uri: img }} style={styles.smallThumb} />
-               ))}
-            </ScrollView>
-          </View>
-
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.btnBig} onPress={() => scanDocument('questao')}>
-              <Text style={styles.btnText}>📸 Adicionar Página</Text>
-            </TouchableOpacity>
-
-            {/* Só mostra finalizar se tiver pelo menos 1 página */}
-            {questaoPages.length > 0 && (
-              <TouchableOpacity style={styles.btnFinish} onPress={() => setStep('REVIEW')}>
-                <Text style={styles.btnText}>✅ Finalizar Questão</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        <Step3Questao 
+          questaoPages={questaoPages} 
+          onScanClick={() => scanDocument('questao')} 
+          onFinishClick={() => setStep('REVIEW')} 
+        />
       )}
 
-      {/* ETAPA 4: REVISÃO E ENVIO */}
       {step === 'REVIEW' && (
-        <ScrollView contentContainerStyle={styles.reviewContainer}>
-          <Text style={styles.title}>Conferência</Text>
-          
-          <Text style={styles.label}>Aluno:</Text>
-          <Text style={styles.data}>{studentData}</Text>
-
-          <Text style={styles.sectionHeader}>Gabarito:</Text>
-          <Image source={{ uri: gabaritoImg! }} style={styles.largeThumb} />
-
-          <Text style={styles.sectionHeader}>Questão ({questaoPages.length} págs):</Text>
-          <ScrollView horizontal>
-            {questaoPages.map((img, index) => (
-              <View key={index} style={{marginRight: 10, alignItems: 'center'}}>
-                 <Text style={{marginBottom: 5, fontWeight: 'bold'}}>Pág {index + 1}</Text>
-                 <Image source={{ uri: img }} style={styles.mediumThumb} />
-              </View>
-            ))}
-          </ScrollView>
-
-          <View style={styles.footerButtons}>
-            <Button 
-              title={isUploading ? "Enviando... ⏳" : "✅ Enviar Avaliação"} 
-              onPress={enviarParaServidor} 
-              disabled={isUploading}
-            />
-            <View style={{marginTop: 10}}>
-              <Button title="Cancelar" color="red" onPress={resetFlow} disabled={isUploading} />
-            </View>
-          </View>
-        </ScrollView>
+        <Step4Review 
+          studentData={studentData} 
+          gabaritoImg={gabaritoImg} 
+          questaoPages={questaoPages} 
+          isUploading={isUploading} 
+          onSubmit={enviarParaServidor} 
+          onCancel={resetFlow} 
+        />
       )}
     </View>
   );
@@ -257,36 +140,5 @@ export default function ScannerFlow() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  fullScreen: { flex: 1 },
-  camera: { flex: 1 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  headerText: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 50, marginTop: -50 },
-  scanFrame: { width: 250, height: 250, borderWidth: 2, borderColor: '#00ff00', backgroundColor: 'transparent' },
-  
   centerParams: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, color: '#333' },
-  studentLabel: { fontSize: 16, fontWeight: 'bold', color: '#007AFF', marginBottom: 30 },
-  statusLabel: { fontSize: 16, color: 'green', marginBottom: 10 },
-  
-  placeholder: { width: 100, height: 140, backgroundColor: '#e1e1e1', justifyContent: 'center', alignItems: 'center', borderRadius: 5, borderStyle: 'dashed', borderWidth: 1, borderColor: '#999' },
-  
-  reviewContainer: { padding: 20, paddingBottom: 50, alignItems: 'center' },
-  label: { fontSize: 14, color: '#888' },
-  data: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  
-  sectionHeader: { fontSize: 18, fontWeight: 'bold', marginTop: 20, marginBottom: 10, width: '100%', borderBottomWidth: 1, borderColor: '#ddd' },
-  largeThumb: { width: '100%', height: 300, resizeMode: 'contain', backgroundColor: '#ddd', borderRadius: 8 },
-  mediumThumb: { width: 150, height: 200, resizeMode: 'contain', backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
-  smallThumb: { width: 80, height: 110, marginRight: 10, borderRadius: 5, borderWidth: 1, borderColor: '#ddd' },
-  
-  footerButtons: { width: '100%', marginTop: 30 },
-  
-  // Estilos novos para botões e lista
-  pagesContainer: { height: 160, marginBottom: 20, width: '100%', alignItems: 'center' },
-  scrollPreview: { flexGrow: 0 },
-  counterText: { marginBottom: 5, color: '#666' },
-  actionButtons: { width: '100%', gap: 10 },
-  btnBig: { backgroundColor: '#007AFF', padding: 15, borderRadius: 10, width: '100%', alignItems: 'center' },
-  btnFinish: { backgroundColor: '#34C759', padding: 15, borderRadius: 10, width: '100%', alignItems: 'center' },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
 });
