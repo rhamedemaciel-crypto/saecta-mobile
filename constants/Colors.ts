@@ -4,4 +4,10 @@ export const COLORS = {
   textGray: '#656565',
   bgWhite: '#ffffff',
   dotInactive: '#D9D9D9',
+
+  inputBg: '#F8F9FA', 
+  inputBorder: '#E9ECEF', 
+  warningOrange: '#E7AD47',
+  
+  codeBorder: '#CCCCCC',
 };

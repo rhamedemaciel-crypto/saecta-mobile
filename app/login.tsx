@@ -16,7 +16,7 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    console.log('Ir para recuperar senha');
+    router.push('/recovery-code');
   };
 
   return (
