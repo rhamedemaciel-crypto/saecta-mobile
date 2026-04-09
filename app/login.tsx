@@ -12,7 +12,8 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const handleLogin = () => {
-    router.push('/scanner');
+    // Muda de '/scanner' para '/dashboard'
+    router.replace('/home'); 
   };
 
   const handleForgotPassword = () => {

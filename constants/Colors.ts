@@ -10,4 +10,11 @@ export const COLORS = {
   warningOrange: '#E7AD47',
   
   codeBorder: '#CCCCCC',
+
+  headerBlue: '#122A4C',
+  bgGray: '#F5F5F5',
+  cardWhite: '#FFFFFF',
+  fabBg: '#F3F4F6',
+  tabInactive: '#A0A0A0',
+  orangeBorder: '#F2994A',
 };
