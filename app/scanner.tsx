@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Button, Alert, Vibration } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, Vibration, Modal, TouchableOpacity } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import DocumentScanner from 'react-native-document-scanner-plugin';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons'; // Ícones pro modal
 
-// Importando nossos componentes fatiados
+import { COLORS } from '../constants/Colors'; // Cores padronizadas
+
+// Importando nossos componentes atualizados
 import Step1QrCode from '../components/scanner/Step1QrCode';
-import Step2Gabarito from '../components/scanner/Step2Gabarito';
-import Step3Questao from '../components/scanner/Step3Questao';
+import CapturaHub from '../components/scanner/CapturaHub'; // Nosso novo painel central
 import Step4Review from '../components/scanner/Step4Review';
 
 type Step = 'QR_CODE' | 'SCAN_GABARITO' | 'SCAN_QUESTAO' | 'REVIEW';
@@ -17,6 +19,10 @@ export default function ScannerFlow() {
   
   const [scanned, setScanned] = useState(false);
   const [studentData, setStudentData] = useState<string | null>(null);
+  
+  // NOVO: Estado que controla se o modal bonitão do aluno lido tá aberto
+  const [showStudentSuccess, setShowStudentSuccess] = useState(false);
+
   const [gabaritoImg, setGabaritoImg] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [questaoPages, setQuestaoPages] = useState<string[]>([]);
@@ -31,10 +37,20 @@ export default function ScannerFlow() {
     Vibration.vibrate();
     setStudentData(data);
 
-    Alert.alert("Aluno Identificado!", `Dados: ${data}`, [
-      { text: "Escanear Provas", onPress: () => setStep('SCAN_GABARITO') },
-      { text: "Tentar Novamente", style: "cancel", onPress: () => { setScanned(false); setStudentData(null); } }
-    ]);
+    // No lugar do Alert.alert antigo, a gente chama a tela de transição
+    setShowStudentSuccess(true);
+  };
+
+  // Funções que os botões do novo Modal usam:
+  const handleConfirmStudent = () => {
+    setShowStudentSuccess(false);
+    setStep('SCAN_GABARITO'); // Avança o fluxo
+  };
+
+  const handleCancelStudent = () => {
+    setShowStudentSuccess(false);
+    setScanned(false);
+    setStudentData(null); // Reseta pra ler outro aluno
   };
 
   const scanDocument = async (target: 'gabarito' | 'questao') => {
@@ -96,6 +112,11 @@ export default function ScannerFlow() {
     setStudentData(null);
     setGabaritoImg(null);
     setQuestaoPages([]); 
+    setShowStudentSuccess(false); // Fecha o modal pra garantir
+  };
+
+  const handleAvancarRevisao = () => {
+    setStep('REVIEW');
   };
 
   if (!permission) return <View />;
@@ -112,15 +133,15 @@ export default function ScannerFlow() {
         <Step1QrCode scanned={scanned} onScan={handleBarCodeScanned} />
       )}
 
-      {step === 'SCAN_GABARITO' && (
-        <Step2Gabarito studentData={studentData} onScanClick={() => scanDocument('gabarito')} />
-      )}
-
-      {step === 'SCAN_QUESTAO' && (
-        <Step3Questao 
-          questaoPages={questaoPages} 
-          onScanClick={() => scanDocument('questao')} 
-          onFinishClick={() => setStep('REVIEW')} 
+      {(step === 'SCAN_GABARITO' || step === 'SCAN_QUESTAO') && (
+        <CapturaHub 
+          studentData={studentData}
+          gabaritoLido={gabaritoImg !== null}
+          questoesLidas={questaoPages.length > 0}
+          onScanGabarito={() => scanDocument('gabarito')}
+          onScanQuestao={() => scanDocument('questao')}
+          onAvancar={handleAvancarRevisao}
+          onVoltar={resetFlow}
         />
       )}
 
@@ -131,9 +152,45 @@ export default function ScannerFlow() {
           questaoPages={questaoPages} 
           isUploading={isUploading} 
           onSubmit={enviarParaServidor} 
-          onCancel={resetFlow} 
+          onCancel={resetFlow}
+          onEditGabarito={() => scanDocument('gabarito')}
+          onEditQuestao={() => scanDocument('questao')}    
         />
       )}
+
+      {/* A MÁGICA: O modal de sucesso do QR Code */}
+      <Modal visible={showStudentSuccess} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.transitionCard}>
+            
+            <View style={styles.successIconBox}>
+              <MaterialCommunityIcons name="check-decagram" size={65} color="#4CAF50" />
+            </View>
+            
+            <Text style={styles.transitionTitle}>Aluno Identificado</Text>
+            
+            <View style={styles.studentIdBox}>
+              <Feather name="user" size={18} color={COLORS.textGray} />
+              <Text style={styles.transitionIdText}>Matrícula: {studentData}</Text>
+            </View>
+
+            <Text style={styles.transitionSub}>
+              O QR Code foi lido com sucesso. Você já pode avançar para a captura das provas.
+            </Text>
+
+            <TouchableOpacity style={styles.primaryButton} onPress={handleConfirmStudent} activeOpacity={0.8}>
+              <Text style={styles.primaryButtonText}>ESCANEAR PROVAS</Text>
+              <Feather name="arrow-right" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleCancelStudent}>
+              <Text style={styles.secondaryButtonText}>Escanear outro aluno</Text>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -141,4 +198,88 @@ export default function ScannerFlow() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   centerParams: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  
+  // --- CSS do Modal ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)', // Fundo escurinho atrás do card
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  transitionCard: {
+    backgroundColor: '#FFFFFF',
+    width: '100%',
+    borderRadius: 24,
+    padding: 30,
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+  },
+  successIconBox: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    marginTop: -10,
+  },
+  transitionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#122A4C',
+    marginBottom: 10,
+  },
+  studentIdBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 20,
+    gap: 8,
+  },
+  transitionIdText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textGray,
+  },
+  transitionSub: {
+    fontSize: 14,
+    color: COLORS.textGray,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 30,
+  },
+  primaryButton: {
+    backgroundColor: '#122A4C',
+    width: '100%',
+    height: 56,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 15,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  secondaryButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  secondaryButtonText: {
+    color: COLORS.textGray,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
 });
