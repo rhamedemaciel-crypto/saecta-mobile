@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Button, Alert, Vibration, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, Vibration, Modal, TouchableOpacity, Platform } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons'; // Ícones pro modal
@@ -29,7 +29,7 @@ export default function ScannerFlow() {
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
-  }, []);
+  }, [permission]); // Adicionado permission como dependência para re-checar
 
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return; 
@@ -53,10 +53,16 @@ export default function ScannerFlow() {
     setStudentData(null); // Reseta pra ler outro aluno
   };
 
+  // REFINAMENTO: Tratamento de erro aprimorado para evitar crash ao cancelar a câmera
   const scanDocument = async (target: 'gabarito' | 'questao') => {
     try {
-      const { scannedImages } = await DocumentScanner.scanDocument({ maxNumDocuments: 1, croppedImageQuality: 100 });
-      if (scannedImages && scannedImages.length > 0) {
+      const { scannedImages, status } = await DocumentScanner.scanDocument({ 
+        maxNumDocuments: 1, 
+        croppedImageQuality: 100 
+      });
+      
+      // Só processa se a foto foi tirada com sucesso (evita erro ao clicar no botão 'voltar' do Android)
+      if (status === 'success' && scannedImages && scannedImages.length > 0) {
         if (target === 'gabarito') {
           setGabaritoImg(scannedImages[0]);
           setStep('SCAN_QUESTAO'); 
@@ -65,8 +71,16 @@ export default function ScannerFlow() {
         }
       }
     } catch (e) {
-      console.log("Scanner cancelado", e);
+      console.log("Scanner cancelado ou falhou", e);
     }
+  };
+
+  // REFINAMENTO: Função auxiliar para garantir que o URI funciona tanto no Android quanto iOS
+  const getSafeUri = (uri: string) => {
+    if (Platform.OS === 'android' && !uri.startsWith('file://')) {
+      return `file://${uri}`;
+    }
+    return uri;
   };
 
   const enviarParaServidor = async () => {
@@ -81,15 +95,30 @@ export default function ScannerFlow() {
       formData.append('aluno_id', studentData);
       
       const gabaritoFilename = gabaritoImg.split('/').pop() || 'gabarito.jpg';
-      formData.append('gabarito', { uri: gabaritoImg, name: gabaritoFilename, type: 'image/jpeg' } as any);
+      // REFINAMENTO: Aplicando o getSafeUri na imagem
+      formData.append('gabarito', { uri: getSafeUri(gabaritoImg), name: gabaritoFilename, type: 'image/jpeg' } as any);
 
       questaoPages.forEach((imgUri, index) => {
         const filename = imgUri.split('/').pop() || `questao_${index}.jpg`;
-        formData.append('questoes', { uri: imgUri, name: filename, type: 'image/jpeg' } as any);
+        // REFINAMENTO: Aplicando o getSafeUri na imagem
+        formData.append('questoes', { uri: getSafeUri(imgUri), name: filename, type: 'image/jpeg' } as any);
       });
 
       const BACKEND_URL = 'http://192.168.0.163:8000/api/avaliar'; 
-      const response = await fetch(BACKEND_URL, { method: 'POST', body: formData, headers: { 'Accept': 'application/json' } });
+      
+      // REFINAMENTO: Adicionado cabeçalho multipart/form-data para evitar bloqueios no Android
+      const fetchPromise = fetch(BACKEND_URL, { 
+        method: 'POST', 
+        body: formData, 
+        headers: { 
+          'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data' 
+        } 
+      });
+      const timerPromise = new Promise(resolve => setTimeout(resolve, 3000)); // Relógio de 3 segundos
+      
+      const [response] = await Promise.all([fetchPromise, timerPromise]);
+
       const result = await response.json();
 
       if (response.ok) {
@@ -119,11 +148,17 @@ export default function ScannerFlow() {
     setStep('REVIEW');
   };
 
-  if (!permission) return <View />;
+  if (!permission) return <View style={styles.container} />;
+  
+  // REFINAMENTO: Tela de permissão estilizada com o design do Saecta
   if (!permission.granted) return (
     <View style={styles.centerParams}>
-      <Text>Precisamos da permissão da câmera</Text>
-      <Button title="Conceder Permissão" onPress={requestPermission} />
+      <MaterialCommunityIcons name="camera-off" size={60} color={COLORS.textGray} style={{ marginBottom: 20 }} />
+      <Text style={styles.permissionTitle}>Câmera Bloqueada</Text>
+      <Text style={styles.permissionText}>O Saecta precisa da câmera para ler as avaliações.</Text>
+      <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+        <Text style={styles.permissionButtonText}>Permitir Acesso</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -197,7 +232,13 @@ export default function ScannerFlow() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  centerParams: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  
+  // REFINAMENTO: Estilos para a tela de permissão bloqueada
+  centerParams: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#FFFFFF' },
+  permissionTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.titleDark, marginBottom: 10 },
+  permissionText: { fontSize: 16, color: COLORS.textGray, textAlign: 'center', marginBottom: 30 },
+  permissionButton: { backgroundColor: '#122A4C', paddingVertical: 14, paddingHorizontal: 30, borderRadius: 12 },
+  permissionButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   
   // --- CSS do Modal ---
   modalOverlay: {
